@@ -1,11 +1,11 @@
 // ───────────────────────────────────────────────
 // Multi-swarm insects (p5.js)
 // ───────────────────────────────────────────────
-const NUM_SWARMS      = 2;      // try 2–4 for more flocks
-const INSECTS_PER_S   = 75;     // insects per swarm
-const AVOID_RADIUS    = 40;     // repel distance between swarms
-const ALL_INSECTS     = [];
-const SWARM_TARGETS   = [];
+const NUM_SWARMS = 2;      // try 2–4 for more flocks
+const INSECTS_PER_S = 75;     // insects per swarm
+const AVOID_RADIUS = 40;     // repel distance between swarms
+const ALL_INSECTS = [];
+const SWARM_TARGETS = [];
 
 function setup() {
   createCanvas(800, 600);
@@ -29,7 +29,7 @@ function draw() {
   // drift each swarm centre with Perlin noise
   SWARM_TARGETS.forEach((t, sid) => {
     const k = frameCount * 0.002 + sid * 10;
-    t.x = width  / 2 + noise(k)       * 200 - 100;
+    t.x = width / 2 + noise(k) * 200 - 100;
     t.y = height / 2 + noise(k + 100) * 150 -  75;
   });
 
@@ -45,27 +45,26 @@ function draw() {
 class Insect {
   constructor(x, y, swarmId) {
     this.swarm = swarmId;
-    this.pos   = createVector(x, y);
-    this.vel   = p5.Vector.random2D().mult(2);
-    this.acc   = createVector();
+    this.pos = createVector(x, y);
+    this.vel = p5.Vector.random2D().mult(2);
+    this.acc = createVector();
     this.maxSp = 4;
     this.maxFo = 0.12;
-    this.size  = 6;
-    this.col   = color(
-      150 + this.swarm * 50, 255 - this.swarm * 80, 220);
+    this.size = 6;
+    this.col = color(150 + this.swarm * 50, 255 - this.swarm * 80, 220);
   }
 
   update() {
-    const mates   = ALL_INSECTS.filter(i => i.swarm === this.swarm);
-    const others  = ALL_INSECTS.filter(i => i.swarm !== this.swarm);
+    const mates = ALL_INSECTS.filter(i => i.swarm === this.swarm);
+    const others = ALL_INSECTS.filter(i => i.swarm !== this.swarm);
 
     // same-swarm behaviours
-    const ali = this.align(mates)               .mult(1.2);
-    const coh = this.cohere(mates)              .mult(1.0);
-    const sep = this.separate(mates, 25)        .mult(1.8);
+    const ali = this.align(mates).mult(1.2);
+    const coh = this.cohere(mates).mult(1.0);
+    const sep = this.separate(mates, 25).mult(1.8);
 
     // attraction to wandering centre
-    const home = this.homeBias()                .mult(0.8);
+    const home = this.homeBias().mult(0.8);
 
     // avoid other swarms
     const avoid = this.separate(others, AVOID_RADIUS).mult(2.5);
@@ -82,7 +81,7 @@ class Insect {
 
   // ───────── flocking helpers ─────────
   align(neighbors)  { return this._steer(neighbors, n => n.vel, 50, false); }
-  cohere(neighbors) { return this._steer(neighbors, n => n.pos, 60,  true); }
+  cohere(neighbors) { return this._steer(neighbors, n => n.pos, 60, true); }
   separate(neighbors, radius) {
     return this._steer(
       neighbors,
@@ -99,7 +98,7 @@ class Insect {
   /**
    * Generic steering accumulator.
    *  - extractor → function returning a vector from neighbour n
-   *  - radius    → perception distance
+   *  - radius → perception distance
    *  - subtractSelf → whether to do (avg − this.pos) for cohesion
    */
   _steer(list, extractor, radius, subtractSelf) {
@@ -129,15 +128,16 @@ class Insect {
     const desired = p5.Vector
       .sub(SWARM_TARGETS[this.swarm], this.pos)
       .setMag(this.maxSp);
+      
     return desired.sub(this.vel).limit(this.maxFo);
   }
 
   // screen-wrap
   edges() {
-    if (this.pos.x > width)  this.pos.x = 0;
-    if (this.pos.x < 0)      this.pos.x = width;
+    if (this.pos.x > width) this.pos.x = 0;
+    if (this.pos.x < 0) this.pos.x = width;
     if (this.pos.y > height) this.pos.y = 0;
-    if (this.pos.y < 0)      this.pos.y = height;
+    if (this.pos.y < 0) this.pos.y = height;
   }
 
   render() {
