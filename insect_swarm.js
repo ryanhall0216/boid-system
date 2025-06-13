@@ -1,149 +1,148 @@
-let insects = [];
-let numInsects = 150; // Number of insects
+// ───────────────────────────────────────────────
+// Multi-swarm insects (p5.js)
+// ───────────────────────────────────────────────
+const NUM_SWARMS      = 2;      // try 2–4 for more flocks
+const INSECTS_PER_S   = 75;     // insects per swarm
+const AVOID_RADIUS    = 40;     // repel distance between swarms
+const ALL_INSECTS     = [];
+const SWARM_TARGETS   = [];
 
 function setup() {
   createCanvas(800, 600);
-  for (let i = 0; i < numInsects; i++) {
-    insects.push(new Insect(random(width), random(height)));
+
+  // wandering centre for every swarm
+  for (let i = 0; i < NUM_SWARMS; i++) {
+    SWARM_TARGETS.push(createVector(random(width), random(height)));
+  }
+
+  // spawn insects tagged with swarm id
+  for (let sid = 0; sid < NUM_SWARMS; sid++) {
+    for (let i = 0; i < INSECTS_PER_S; i++) {
+      ALL_INSECTS.push(new Insect(random(width), random(height), sid));
+    }
   }
 }
 
 function draw() {
-  background(51);
-  // Update and show each insect
-  for (let i = 0; i < insects.length; i++) {
-    insects[i].edges();
-    insects[i].update();
-    insects[i].show();
+  background(30);
+
+  // drift each swarm centre with Perlin noise
+  SWARM_TARGETS.forEach((t, sid) => {
+    const k = frameCount * 0.002 + sid * 10;
+    t.x = width  / 2 + noise(k)       * 200 - 100;
+    t.y = height / 2 + noise(k + 100) * 150 -  75;
+  });
+
+  // update + render
+  for (const ins of ALL_INSECTS) {
+    ins.edges();
+    ins.update();
+    ins.render();
   }
 }
 
+// ─────────── Insect class ───────────
 class Insect {
-  constructor(x, y) {
-    this.position = createVector(x, y);
-    this.velocity = createVector(random(-2, 2), random(-2, 2));
-    this.acceleration = createVector();
-    this.maxSpeed = 4;
-    this.maxForce = 0.1;
-    this.size = 6;
-    this.color = color(random(255), random(255), random(255));
+  constructor(x, y, swarmId) {
+    this.swarm = swarmId;
+    this.pos   = createVector(x, y);
+    this.vel   = p5.Vector.random2D().mult(2);
+    this.acc   = createVector();
+    this.maxSp = 4;
+    this.maxFo = 0.12;
+    this.size  = 6;
+    this.col   = color(
+      150 + this.swarm * 50, 255 - this.swarm * 80, 220);
   }
 
   update() {
-    // Move with erratic behavior to simulate quick adjustments
-    this.flock(insects);
-    this.velocity.add(this.acceleration);
-    this.velocity.limit(this.maxSpeed);
-    this.position.add(this.velocity);
-    this.acceleration.mult(0);
+    const mates   = ALL_INSECTS.filter(i => i.swarm === this.swarm);
+    const others  = ALL_INSECTS.filter(i => i.swarm !== this.swarm);
+
+    // same-swarm behaviours
+    const ali = this.align(mates)               .mult(1.2);
+    const coh = this.cohere(mates)              .mult(1.0);
+    const sep = this.separate(mates, 25)        .mult(1.8);
+
+    // attraction to wandering centre
+    const home = this.homeBias()                .mult(0.8);
+
+    // avoid other swarms
+    const avoid = this.separate(others, AVOID_RADIUS).mult(2.5);
+
+    // accumulate forces
+    [ali, coh, sep, home, avoid].forEach(f => this.applyForce(f));
+
+    this.vel.add(this.acc).limit(this.maxSp);
+    this.pos.add(this.vel);
+    this.acc.mult(0);
   }
 
-  applyForce(force) {
-    this.acceleration.add(force);
+  applyForce(f) { this.acc.add(f); }
+
+  // ───────── flocking helpers ─────────
+  align(neighbors)  { return this._steer(neighbors, n => n.vel, 50, false); }
+  cohere(neighbors) { return this._steer(neighbors, n => n.pos, 60,  true); }
+  separate(neighbors, radius) {
+    return this._steer(
+      neighbors,
+      n => {
+        const diff = p5.Vector.sub(this.pos, n.pos);
+        const d = diff.mag();
+        return d ? diff.div(d * d) : createVector();
+      },
+      radius,
+      false
+    );
   }
 
+  /**
+   * Generic steering accumulator.
+   *  - extractor → function returning a vector from neighbour n
+   *  - radius    → perception distance
+   *  - subtractSelf → whether to do (avg − this.pos) for cohesion
+   */
+  _steer(list, extractor, radius, subtractSelf) {
+    let steer = createVector();
+    let total = 0;
+
+    for (const other of list) {
+      const d = p5.Vector.dist(this.pos, other.pos);
+      if (other !== this && d < radius) {
+        steer.add(extractor(other));
+        total++;
+      }
+    }
+
+    if (total) {
+      steer.div(total);
+      if (subtractSelf) steer.sub(this.pos);   // only cohesion
+      steer.setMag(this.maxSp);
+      steer.sub(this.vel);
+      steer.limit(this.maxFo);
+    }
+    return steer;
+  }
+
+  // pull toward swarm centre
+  homeBias() {
+    const desired = p5.Vector
+      .sub(SWARM_TARGETS[this.swarm], this.pos)
+      .setMag(this.maxSp);
+    return desired.sub(this.vel).limit(this.maxFo);
+  }
+
+  // screen-wrap
   edges() {
-    if (this.position.x > width) {
-      this.position.x = 0;
-    } else if (this.position.x < 0) {
-      this.position.x = width;
-    }
-    if (this.position.y > height) {
-      this.position.y = 0;
-    } else if (this.position.y < 0) {
-      this.position.y = height;
-    }
+    if (this.pos.x > width)  this.pos.x = 0;
+    if (this.pos.x < 0)      this.pos.x = width;
+    if (this.pos.y > height) this.pos.y = 0;
+    if (this.pos.y < 0)      this.pos.y = height;
   }
 
-  flock(insects) {
-    let alignment = this.align(insects);
-    let cohesion = this.cohere(insects);
-    let separation = this.separate(insects);
-
-    alignment.mult(1.0);
-    cohesion.mult(1.0);
-    separation.mult(2.0);
-
-    this.applyForce(alignment);
-    this.applyForce(cohesion);
-    this.applyForce(separation);
-  }
-
-  align(insects) {
-    let perceptionRadius = 50;
-    let steering = createVector();
-    let total = 0;
-    for (let i = 0; i < insects.length; i++) {
-      let d = p5.Vector.dist(this.position, insects[i].position);
-      if (d < perceptionRadius && insects[i] !== this) {
-        steering.add(insects[i].velocity);
-        total++;
-      }
-    }
-    if (total > 0) {
-      steering.div(total);
-      steering.setMag(this.maxSpeed);
-      steering.sub(this.velocity);
-      steering.limit(this.maxForce);
-    }
-    return steering;
-  }
-
-  cohere(insects) {
-    let perceptionRadius = 100;
-    let steering = createVector();
-    let total = 0;
-    for (let i = 0; i < insects.length; i++) {
-      let d = p5.Vector.dist(this.position, insects[i].position);
-      if (d < perceptionRadius && insects[i] !== this) {
-        steering.add(insects[i].position);
-        total++;
-      }
-    }
-    if (total > 0) {
-      steering.div(total);
-      steering.sub(this.position);
-      steering.setMag(this.maxSpeed);
-      steering.sub(this.velocity);
-      steering.limit(this.maxForce);
-    }
-    return steering;
-  }
-
-  separate(insects) {
-    let perceptionRadius = 25;
-    let steering = createVector();
-    let total = 0;
-    for (let i = 0; i < insects.length; i++) {
-      let d = p5.Vector.dist(this.position, insects[i].position);
-      if (d < perceptionRadius && insects[i] !== this) {
-        let diff = p5.Vector.sub(this.position, insects[i].position);
-        diff.div(d);
-        steering.add(diff);
-        total++;
-      }
-    }
-    if (total > 0) {
-      steering.div(total);
-    }
-    if (steering.mag() > 0) {
-      steering.setMag(this.maxSpeed);
-      steering.sub(this.velocity);
-      steering.limit(this.maxForce);
-    }
-    return steering;
-  }
-
-  randomMovement() {
-    if (random() < 0.01) {
-      let randForce = createVector(random(-1, 1), random(-1, 1));
-      this.applyForce(randForce);
-    }
-  }
-
-  show() {
-    fill(this.color);
+  render() {
     noStroke();
-    ellipse(this.position.x, this.position.y, this.size, this.size);
+    fill(this.col);
+    ellipse(this.pos.x, this.pos.y, this.size);
   }
 }
